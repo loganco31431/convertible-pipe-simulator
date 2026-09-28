@@ -16,6 +16,20 @@ I built this after a summer at a structured finance fund evaluating live PIPE po
 numbers on the intuition that these deals are priced off flow and structure more than off the
 stock's direction.
 
+## Who it is for
+
+- **Issuers.** A CFO weighing a variable-price note usually has one number in mind: the share
+  count the deal "should" cost at today's price. The model replaces that single number with a
+  distribution. It shows how much more dilution the issuer takes than that base case once the
+  stock is volatile or the pricing period is short, and what a floor price or a longer cadence
+  buys back. That is the negotiation: discount, cadence, floor, and tranche size are the levers,
+  and each one has a dilution cost the issuer can now put a number on.
+- **Investors.** The same instrument can be valued three ways: as a bond with a conversion
+  option, as a discounted-VWAP claim on future share sales, or as the equity itself. The model
+  makes the second view explicit by simulating the conversion-and-sell path, so an investor can
+  compare the IRR of running the structure against simply holding the stock, and see which
+  terms (discount, cadence, floor) actually drive the return and which are noise.
+
 ## What it does
 
 1. Pulls two years of prices from Yahoo Finance, calibrates annualized realized volatility, and
@@ -28,6 +42,53 @@ stock's direction.
 4. Solves annualized IRR per path by vectorized bisection and reports IRR percentiles, MOIC,
    probability of loss, and issuer dilution (`pipesim/metrics.py`).
 5. Sweeps volatility x discount and conversion cadence x floor price (`pipesim/scenarios.py`).
+
+## Execution model: selling is not free
+
+The engine above assumes the investor sells every converted share at the close. `trade.py` drops
+that assumption. Put in a ticker and it pulls price, volatility, shares outstanding and average
+daily volume (`pipesim/market.py`), then runs the note through `pipesim/execution.py`:
+
+- **Volume limit.** The investor sells at most `participation` of each day's volume (10% by
+  default) and holds the rest as inventory. It converts only what it can sell before the next
+  conversion.
+- **Price impact (square-root law).** Selling q shares into daily volume V costs
+  `eta x daily vol x sqrt(q / V)` on that day's fills.
+- **Carried impact and recovery.** Half of that move carries past the day. Of the carried move,
+  30% stays in the price for good and the rest fades with a 10-trading-day half-life, so the
+  stock recovers part of the drop once the selling slows. The carried move lowers the VWAP that
+  sets later conversion prices, which is how the investor's own selling raises the issuer's
+  dilution.
+- **Best setup.** `pipesim/optimize.py` grid-searches conversion cadence, tranche size and
+  selling speed, and ranks setups by median dollar profit among those with P(loss) of 10% or less.
+- **Replay.** The same note runs on the stock's actual last year of prices and volume, with the
+  investor's own impact layered on top.
+
+```
+python trade.py --ticker OTLK
+python trade.py --ticker GPRO --no-optimize --paths 3000
+python trade.py --ticker OTLK --half-life inf        # impact never recovers
+```
+
+### Example: Outlook Therapeutics, $10M note, 10% discount, run 2026-09-28
+
+Spot $0.64, realized vol 163%, 243.4M shares outstanding, about $9.0M of stock traded a day, so
+the note is about 1.1 days of total volume.
+
+| | Frictionless | Impact, no recovery | Impact with recovery |
+|---|---|---|---|
+| Median IRR | 112% | 94% | 98% |
+| p10 IRR | 72% | 37% | 44% |
+| Median dilution | 12.6% | 14.5% | 13.3% |
+| Price drag from own selling, worst / at end | | 26% / 26% | 11% / 8% |
+
+- **Liquidity decides how much of the discount the investor keeps.** Impact costs about 145 bps
+  of every sale, and full exit takes about 160 trading days. On GoPro, which trades about
+  $45M a day, impact barely moves the IRR.
+- **Small and frequent beats large.** The best setup converts 5% of principal every 5 days and
+  sells at 10% of volume, for about $2.6M median profit.
+- **The discount carries the trade on real data too.** Replayed on the last year of actual
+  prices, the stock fell 5% over the term and the note still made $2.8M (128% IRR).
 
 ## Run it
 
@@ -70,17 +131,25 @@ Calibrated on 2026-09-03: spot $1.39, realized vol 118%, 184.5M shares outstandi
 
 These are the things I would want to be asked about.
 
-- **No price impact.** The investor sells into the market at the close less a fixed slippage
-  haircut. In reality selling 5% of a microcap's float pushes the price down, which is the main
-  reason real PIPE returns are lower and dilution is higher than this model shows.
-- **VWAP is a trailing mean of closes.** Volume is not simulated.
+- **Impact parameters are placeholders, not fitted.** The square-root coefficient (0.5), the
+  carried share (50%), the part that never fades (30%) and the 10-day half-life are
+  textbook-scale values. None is fitted to real PIPE selling. The right calibration is a desk's
+  own record of how much its selling moved a stock and how fast the price came back. Every one
+  is a flag on `trade.py`, so the results can be checked across a range. The base engine in
+  `run.py` still has no impact at all.
+- **VWAP is a trailing mean of closes.** Simulated volume is lognormal around the average and
+  independent across days; it does not rise on down days or react to the investor's selling.
 - **Zero-drift GBM.** No jumps, no default, no delisting. Probability of loss is near zero here
   because every permitted conversion locks in the discount; the real loss case is the issuer
   failing before the note converts.
-- **Conversion rule is mechanical.** A fixed tranche every `cadence` days when profitable. A
-  real desk sizes to volume and daily conversion caps.
-- **No lookahead.** Every decision on day t uses closes up to day t only, so the backtest logic
-  cannot leak future prices into past conversions.
+- **Conversion rule is mechanical.** A fixed tranche every `cadence` days when profitable. The
+  execution model caps it at what can be sold before the next conversion, but there are no
+  contractual daily conversion caps or ownership blockers (for example 4.99%).
+- **No lookahead.** Every decision on day t uses closes and volume up to day t only, and impact
+  from day t's sales reaches prices from day t+1 on, so the logic cannot leak future prices into
+  past conversions. A test shocks prices after day 120 and checks that nothing before it changes.
+  The replay has a separate leak: volatility and volume are calibrated on the same window it
+  replays.
 
 ## Layout
 
@@ -92,6 +161,10 @@ pipesim/
   metrics.py       IRR by bisection, summary statistics
   calibrate.py     yfinance vol and shares-outstanding calibration
   scenarios.py     volatility x discount grid, cadence x floor stress
+  market.py        yfinance price, vol, shares outstanding and volume for the execution model
+  execution.py     volume-limited, price-moving conversion engine with impact recovery
+  optimize.py      cadence x tranche x selling-speed grid search
 run.py             CLI: prints tables, writes charts to output/
+trade.py           CLI: ticker in, frictionless vs execution-aware, best setup, historical replay
 tests/             engine and metric sanity checks
 ```
