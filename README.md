@@ -97,11 +97,21 @@ average daily volume (`pipesim/market.py`), then sells the shares under real con
 - **Replay.** The same deal runs on the stock's actual last year of prices and volume, with the
   investor's own impact layered on top.
 
-**Dashboard.** Double-click `Simulator.bat` (or run `python -m streamlit run app.py`). A browser tab
-opens. Pick a ticker and a deal to start from, change any term, press Run. It shows the no-impact
-vs realistic comparison, how the investor gets paid back (shares, cash, or at maturity), the
-warrants, the replay on real prices, the best-setup search, a deal-size sweep (how big a deal the
-stock can absorb), and an Excel export of everything.
+**Dashboard.** Double-click `Simulator.bat` (or run `python -m streamlit run app.py`). It opens on
+the desk view and runs as soon as a ticker is entered; Run applies changed terms.
+
+- **Trade-out** (default): pick a structure (Option 1, Option 2, note conversion). A strategy
+  leaderboard scores five ways of selling against VWAP across every notice day in the data; the
+  execution plan turns the chosen strategy into a half-hour schedule for a notice on the next
+  trading day, with expected participation, cost and anything the volume cap leaves for a final
+  trade; the day replay shows price, running VWAP and the desk's participation bar by bar; the
+  liquidity tab shows the intraday volume pattern, daily dollar volume and days to sell at each
+  participation rate.
+- **Deal economics:** pick a structure from the filed deals, change any term. No impact vs
+  realistic selling, warrants, where the principal goes (shares, cash early, cash at maturity),
+  the replay on the last year of real prices, the optimizer and the size sweep.
+
+Both pages export to Excel or CSV from the Export menu.
 
 ```
 python trade.py --ticker OTLK

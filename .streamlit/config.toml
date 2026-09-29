@@ -6,3 +6,27 @@ headless = false
 
 [client]
 toolbarMode = "minimal"
+
+# Desk theme: dark surfaces and text from the dataviz reference palette; blue accent (series 1),
+# status green and red reserved for gains and losses.
+[theme]
+base = "dark"
+primaryColor = "#3987e5"
+backgroundColor = "#111110"
+secondaryBackgroundColor = "#1a1a19"
+textColor = "#ecebe6"
+borderColor = "#2c2c2a"
+dataframeBorderColor = "#2c2c2a"
+dataframeHeaderBackgroundColor = "#1a1a19"
+greenColor = "#0ca30c"
+redColor = "#d03b3b"
+baseFontSize = 14
+baseRadius = "0.3rem"
+buttonRadius = "0.3rem"
+metricValueFontSize = "1.45rem"
+metricValueFontWeight = 600
+headingFontSizes = ["1.5rem", "1.15rem", "0.95rem"]
+headingFontWeights = [650, 600, 600]
+showWidgetBorder = true
+showSidebarBorder = true
+chartCategoricalColors = ["#3987e5", "#d95926", "#199e70", "#c98500"]

@@ -366,3 +366,40 @@ def compare(bars: Bars, ts: TermSheet, imp: IntradayImpact, shares_out: float,
         })
     table = pd.DataFrame(rows).sort_values("profit_median", ascending=False).reset_index(drop=True)
     return table, runs
+
+
+def plan(bars: Bars, ts: TermSheet, imp: IntradayImpact, strategy: str, shares_out: float,
+         lookback: int = 20) -> tuple[TradeOut | None, int]:
+    """Expected schedule for a notice on the next trading day.
+
+    Appends the days the term sheet needs, each at the last close with the stock's average
+    intraday volume pattern and its average daily volume over the last `lookback` days, and runs
+    the same engine on them. Prices are flat, so the plan shows sizing, timing and the desk's own
+    expected impact, not a price forecast. "Sell into strength" reacts to price moves that a flat
+    day doesn't have, so it is planned as the volume curve.
+
+    Returns the run and the row of the planned notice day, or (None, -1) when the trade would not
+    happen (a conversion priced above the market).
+    """
+    strat = "vwap" if strategy == "strength" else strategy
+    sepa = ts.kind == "sepa"
+    n_price = (1 if ts.option == 1 else ts.pricing_days) if sepa else 0
+    s0 = 0 if ts.sell_before_delivery else ts.delivery_lag
+    H = max(s0 + ts.sell_days, n_price)
+    recent = bars.volume[-lookback:]
+    prof = (recent / np.maximum(recent.sum(axis=1, keepdims=True), 1.0)).mean(axis=0)
+    prof = prof / prof.sum()
+    adv = float(recent.sum(axis=1).mean())
+    last = float(bars.close[-1, -1])
+    fut = pd.bdate_range(bars.days[-1] + pd.Timedelta(days=1), periods=H)
+    flat = np.full((H, bars.slots), last)
+    syn = Bars(days=bars.days.append(fut), slot_times=bars.slot_times,
+               price=np.vstack([bars.price, flat]), close=np.vstack([bars.close, flat]),
+               volume=np.vstack([bars.volume, np.tile(adv * prof, (H, 1))]),
+               bar_minutes=bars.bar_minutes, source=bars.source)
+    try:
+        r = run_tradeout(syn, ts, imp, strat, shares_out)
+    except ValueError:
+        return None, -1
+    hit = np.where(r.windows["notice_day"].to_numpy() == np.datetime64(fut[0]))[0]
+    return (r, int(hit[0])) if len(hit) else (None, -1)
