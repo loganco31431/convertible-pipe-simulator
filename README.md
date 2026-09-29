@@ -64,6 +64,11 @@ daily volume (`pipesim/market.py`), then runs the note through `pipesim/executio
 - **Replay.** The same note runs on the stock's actual last year of prices and volume, with the
   investor's own impact layered on top.
 
+**Dashboard.** Double-click `Simulator.bat` (or run `python -m streamlit run app.py`). A browser tab
+opens; enter a ticker and deal terms, press Run. It covers convertible notes and equity lines, and
+shows the no-impact vs realistic comparison, the replay on real prices, the best-setup search, a
+deal-size sweep (how big a deal the stock can absorb), and an Excel export of everything.
+
 ```
 python trade.py --ticker OTLK
 python trade.py --ticker GPRO --no-optimize --paths 3000
@@ -165,6 +170,7 @@ pipesim/
   execution.py     volume-limited, price-moving conversion engine with impact recovery
   optimize.py      cadence x tranche x selling-speed grid search
 run.py             CLI: prints tables, writes charts to output/
+app.py             dashboard: same models in a browser, plus deal-size sweep and Excel export
 trade.py           CLI: ticker in, frictionless vs execution-aware, best setup, historical replay
 tests/             engine and metric sanity checks
 ```
