@@ -75,6 +75,35 @@ python trade.py --ticker GPRO --no-optimize --paths 3000
 python trade.py --ticker OTLK --half-life inf        # impact never recovers
 ```
 
+## Trade-out vs VWAP: can the desk beat VWAP inside the term sheet?
+
+The dashboard's second page replays the term sheet on real intraday bars (`pipesim/intraday/`).
+Every trading day in the data is tried as a notice day, and five selling strategies run on the
+same days: even through the day (TWAP), follow the volume curve (VWAP), a fixed share of volume
+(POV), front-loaded, and sell into strength. Each is scored on its average sale price against the
+interval VWAP in bps, how much of the discount it kept, dollar profit, and how much had to be
+dumped at the end.
+
+- **Term sheet:** SEPA (priced over days after the notice) or note (priced off days before it);
+  lowest daily VWAP, average of daily VWAPs, or period VWAP; discount; pricing and selling days;
+  selling before delivery or after a lag; the 4.99% ownership cap; an advance cap as a multiple of
+  volume; the desk's own participation limit.
+- **The desk sets its own price.** In a VWAP-priced advance the desk's sales are in the VWAP that
+  sets its purchase price. The model recomputes daily VWAPs with the desk's trades in them and
+  reports how much its selling moved the purchase price.
+- **Impact:** square-root per bar, scaled so a steady day of selling at share pi of volume ends
+  impact strength x daily vol x sqrt(pi) lower, the same law as the daily model. Part stays, part
+  fades with an intraday half-life. Placeholders until calibrated on real fills.
+- **Data:** Yahoo 5-minute bars (about 60 trading days), a Bloomberg export (Excel or CSV with a
+  time column, OHLC or last price, and volume), or a live Bloomberg terminal through `blpapi`
+  (IntradayBarRequest, about 140 business days of bars). The Bloomberg live path is written but
+  has not been run on a terminal yet.
+- **Lookahead:** each sale uses earlier bars' prices, the running VWAP so far, and the volume
+  pattern and volatility from days before the notice. The bar's own volume is used only as the
+  participation cap. A test shocks prices and volumes after a given bar and checks that no earlier
+  sale changes. The notice days overlap and come from one stretch of one stock, so small
+  differences between strategies are noise.
+
 ### Example: Outlook Therapeutics, $10M note, 10% discount, run 2026-09-28
 
 Spot $0.64, realized vol 163%, 243.4M shares outstanding, about $9.0M of stock traded a day, so
@@ -171,6 +200,9 @@ pipesim/
   optimize.py      cadence x tranche x selling-speed grid search
 run.py             CLI: prints tables, writes charts to output/
 app.py             dashboard: same models in a browser, plus deal-size sweep and Excel export
+  intraday/data.py      intraday bars from Yahoo, a Bloomberg export, or a Bloomberg terminal
+  intraday/tradeout.py  term sheet, selling strategies, VWAP scoring
+views/             dashboard pages (deal economics, trade-out vs VWAP)
 trade.py           CLI: ticker in, frictionless vs execution-aware, best setup, historical replay
 tests/             engine and metric sanity checks
 ```
