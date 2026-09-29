@@ -1,9 +1,6 @@
 [browser]
 gatherUsageStats = false
 
-[server]
-headless = false
-
 [client]
 toolbarMode = "minimal"
 

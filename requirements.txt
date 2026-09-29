@@ -1,8 +1,8 @@
 numpy>=1.26
-pandas>=2.0
+pandas>=2.1
 matplotlib>=3.8
 yfinance>=0.2
 pytest>=8
-streamlit>=1.40
-plotly>=5.0
+streamlit>=1.64
+plotly>=6.0
 openpyxl>=3.1
