@@ -5,13 +5,19 @@ Three sources, one output:
 - `yahoo_bars`      free, 5-minute bars for about the last 60 trading days (1-minute for ~7 days).
 - `csv_bars`        a file exported from Bloomberg (Excel intraday bars, BDIB/IntradayBar
                     output) or any other vendor: needs a time column plus open/high/low/close
-                    (or last price) and volume. Column names are matched loosely.
+                    (or last price) and volume. Column names are matched loosely. A `vwap`
+                    column, or a `value` (turnover) column, is used as the bar price if present.
 - `bloomberg_bars`  live IntradayBarRequest through the Desktop API (`blpapi`), for use on a
                     terminal. Written against the public blpapi reference; NOT yet run on a
                     terminal, so treat the first run as a test.
 
 `to_grid` turns any of them into `Bars`: regular-session slots (09:30 to 16:00 New York) laid out
 as (n_days, slots) arrays, so every trading day lines up bar for bar.
+
+Bar price. The agreements define VWAP as Bloomberg's (the "AQR" function). Bloomberg intraday
+bars carry `value`, the dollars traded in the bar, so value / volume is the bar's true VWAP and is
+used when present. Yahoo has no such field, so its bars use the typical price, (high + low +
+close) / 3, as a proxy.
 """
 from dataclasses import dataclass
 
@@ -25,7 +31,7 @@ NY = "America/New_York"
 class Bars:
     days: pd.DatetimeIndex     # trading dates, oldest first
     slot_times: list           # "09:30", "09:35", ...
-    price: np.ndarray          # (n_days, slots) typical price (h + l + c) / 3, a proxy for the bar's VWAP
+    price: np.ndarray          # (n_days, slots) bar VWAP where the source has it, else typical price (h + l + c) / 3
     close: np.ndarray          # (n_days, slots) last trade in the bar
     volume: np.ndarray         # (n_days, slots) shares traded in the bar, 0 where no trade printed
     bar_minutes: int
@@ -51,7 +57,8 @@ def _normalize(df: pd.DataFrame, tz: str) -> pd.DataFrame:
     df = df.rename(columns=cols)
     aliases = {"last_price": "close", "last": "close", "px_last": "close", "price": "close",
                "open_price": "open", "px_open": "open", "high_price": "high", "px_high": "high",
-               "low_price": "low", "px_low": "low", "px_volume": "volume", "vol": "volume"}
+               "low_price": "low", "px_low": "low", "px_volume": "volume", "vol": "volume",
+               "turnover": "value", "bar_vwap": "vwap", "eqy_weighted_avg_px": "vwap"}
     df = df.rename(columns={k: v for k, v in aliases.items() if k in df.columns and v not in df.columns})
     if not isinstance(df.index, pd.DatetimeIndex):
         tcol = next((c for c in df.columns if c in ("time", "datetime", "date", "dates", "timestamp", "date_time")), None)
@@ -63,11 +70,13 @@ def _normalize(df: pd.DataFrame, tz: str) -> pd.DataFrame:
     for c in ("open", "high", "low"):
         if c not in df:
             df[c] = df["close"]
-    idx = df.index
-    df.index = idx.tz_localize(tz) if idx.tz is None else idx.tz_convert(NY)
-    if tz != NY:
-        df.index = df.index.tz_convert(NY)
-    return df[["open", "high", "low", "close", "volume"]].astype(float).sort_index()
+    if "vwap" not in df and "value" in df:
+        df["vwap"] = df["value"] / df["volume"].where(df["volume"] > 0)
+    idx = pd.DatetimeIndex(df.index)
+    idx = idx.tz_localize(tz) if idx.tz is None else idx
+    df.index = idx.tz_convert(NY)
+    cols = ["open", "high", "low", "close", "volume"] + (["vwap"] if "vwap" in df else [])
+    return pd.DataFrame(df[cols]).astype(float).sort_index()
 
 
 def to_grid(df: pd.DataFrame, bar_minutes: int, source: str, min_fill: float = 0.6) -> Bars:
@@ -81,6 +90,9 @@ def to_grid(df: pd.DataFrame, bar_minutes: int, source: str, min_fill: float = 0
     df = df.assign(day=df.index.normalize().tz_localize(None), slot=df.index.strftime("%H:%M"))
     df = df[df["slot"].isin(slots)]
     typical = (df["high"] + df["low"] + df["close"]) / 3.0
+    if "vwap" in df:
+        typical = df["vwap"].fillna(typical)
+        source += ", bar VWAP"
     df = df.assign(typical=typical)
     keep = df.groupby("day").size() >= min_fill * len(slots)
     df = df[df["day"].isin(keep[keep].index)]
@@ -150,7 +162,8 @@ def bloomberg_bars(security: str, start: pd.Timestamp, end: pd.Timestamp, bar_mi
                     b = ticks.getValueAsElement(i)
                     rows.append({"time": b.getElementAsDatetime("time"), "open": b.getElementAsFloat("open"),
                                  "high": b.getElementAsFloat("high"), "low": b.getElementAsFloat("low"),
-                                 "close": b.getElementAsFloat("close"), "volume": b.getElementAsInteger("volume")})
+                                 "close": b.getElementAsFloat("close"), "volume": b.getElementAsInteger("volume"),
+                                 "value": b.getElementAsFloat("value") if b.hasElement("value") else float("nan")})
             if ev.eventType() == blpapi.Event.RESPONSE:
                 break
     finally:

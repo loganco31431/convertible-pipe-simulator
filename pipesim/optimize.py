@@ -29,7 +29,8 @@ def search(instr, mkt, ex: ExecutionModel, cadences=(5, 10, 21), tranche_pcts=(0
         res = run_execution(inst, mkt, e, n_paths=n_paths, seed=seed)
         s, x = summarize(res), execution_stats(res)
         rows.append({"cadence_days": c, "tranche_pct": tp, "participation": p,
-                     "irr_p10": s["irr_p10"], "irr_p50": s["irr_p50"], "prob_loss": s["prob_loss"],
+                     "irr_p10": s["irr_p10"], "irr_p50": s["irr_p50"], "margin_p50": s["margin_p50"],
+                     "prob_loss": s["prob_loss"],
                      "pnl_p50": s["pnl_p50"], "moic_p50": s["moic_p50"], "dilution_p50": s["dilution_p50"],
                      "converted_p50": s["converted_p50"], "impact_bps_p50": x["impact_bps_p50"],
                      "exit_day_p50": x["exit_day_p50"]})
