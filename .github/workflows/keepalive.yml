@@ -1,0 +1,48 @@
+name: keepalive
+
+# Streamlit Community Cloud sleeps an app after about 12 hours with no visitors.
+# This opens the app in a real browser every 6 hours so it stays awake, and wakes it if it already slept.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install playwright
+          playwright install --with-deps chromium
+      - name: Open the app
+        run: |
+          cat > ping.py <<'PY'
+          import sys
+          from playwright.sync_api import sync_playwright
+
+          URL = "https://convertible-pipe-simulator-3ziespacersumn6kcjrmm9.streamlit.app/"
+          with sync_playwright() as p:
+              b = p.chromium.launch()
+              page = b.new_page()
+              page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+              page.wait_for_timeout(5000)
+              for f in [page, *page.frames]:
+                  btn = f.get_by_role("button", name="Yes, get this app back up!")
+                  if btn.count():
+                      btn.first.click()
+                      print("app was asleep, woke it")
+                      page.wait_for_timeout(30000)
+                      break
+              ok = False
+              for f in [page, *page.frames]:
+                  if f.locator('[data-testid="stApp"]').count():
+                      ok = True
+              print("app loaded" if ok else "app UI not found")
+              b.close()
+              sys.exit(0 if ok else 1)
+          PY
+          python ping.py

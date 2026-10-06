@@ -179,10 +179,12 @@ def quote(ticker: str):
 
 def ticker_strip(ticker: str, q: dict, extra: list | None = None):
     m = q["mkt"]
+    med = float(m.history["Volume"].tail(60).median()) if m.history is not None else m.adv_shares
     items = [("Last", price(q["last"]), signed(pct(abs(q["d1"])), q["d1"])),
              ("1M", "", signed(pct(abs(q["m1"])), q["m1"]) if np.isfinite(q["m1"]) else "n/a"),
              ("Vol 1Y", pct(m.sigma, 0)),
              ("ADV 60D", f"{m.adv_shares / 1e6:,.2f}M sh", f'<span class="muted">{usd(m.adv_dollars)}</span>'),
+             ("Med vol 60D", f"{med / 1e6:,.2f}M sh", f'<span class="muted">{usd(med * m.s0)}</span>'),
              ("Mkt cap", usd(m.s0 * m.shares_out)),
              ("Shares out", f"{m.shares_out / 1e6:,.1f}M")]
     if q.get("asof") is not None:
