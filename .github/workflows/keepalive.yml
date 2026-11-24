@@ -1,10 +1,12 @@
 name: keepalive
 
 # Streamlit Community Cloud sleeps an app after about 12 hours with no visitors.
-# This opens the app in a real browser every 6 hours so it stays awake, and wakes it if it already slept.
+# This opens the app in a real browser every 2 hours so it stays awake, and wakes it if it already slept.
+# GitHub delays and drops scheduled runs under load (a 6-hour schedule ran about twice a day),
+# so the schedule is tighter than the 12-hour sleep timer needs.
 on:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 */2 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -12,9 +14,9 @@ permissions: {}
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - run: |
@@ -23,7 +25,7 @@ jobs:
       - name: Open the app
         run: |
           cat > ping.py <<'PY'
-          import sys
+          import sys, time
           from playwright.sync_api import sync_playwright
 
           URL = "https://convertible-pipe-simulator-3ziespacersumn6kcjrmm9.streamlit.app/"
@@ -32,18 +34,22 @@ jobs:
               page = b.new_page()
               page.goto(URL, wait_until="domcontentloaded", timeout=60000)
               page.wait_for_timeout(5000)
+              def loaded():
+                  return any(f.locator('[data-testid="stApp"]').count() for f in [page, *page.frames])
+
               for f in [page, *page.frames]:
                   btn = f.get_by_role("button", name="Yes, get this app back up!")
                   if btn.count():
                       btn.first.click()
                       print("app was asleep, woke it")
-                      page.wait_for_timeout(30000)
                       break
-              ok = False
-              for f in [page, *page.frames]:
-                  if f.locator('[data-testid="stApp"]').count():
-                      ok = True
-              print("app loaded" if ok else "app UI not found")
+              # a cold start can take a few minutes; poll instead of one fixed wait
+              deadline = time.time() + 180
+              ok = loaded()
+              while not ok and time.time() < deadline:
+                  page.wait_for_timeout(10000)
+                  ok = loaded()
+              print("app loaded" if ok else "app UI not found after 3 minutes")
               b.close()
               sys.exit(0 if ok else 1)
           PY
