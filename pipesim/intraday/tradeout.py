@@ -146,10 +146,18 @@ def run_tradeout(bars: Bars, ts: TermSheet, imp: IntradayImpact, strategy: str, 
     S_ = bars.slots
     s0 = 0 if ts.sell_before_delivery else ts.delivery_lag
     H = max(s0 + ts.sell_days, n_price)
+    n_days = len(bars.days)
+    # short data (Yahoo 1-minute bars cover about 7 days): use less warm-up, but never under the
+    # 5 days the advance cap's 5-day average volume needs
+    warmup = min(warmup, max(5, n_days - H - 1))
     first_day = max(warmup, 5, 0 if sepa else ts.pricing_days)
-    starts = np.arange(first_day, len(bars.days) - H + 1)
+    starts = np.arange(first_day, n_days - H + 1)
     if len(starts) == 0:
-        raise ValueError("not enough days of data for this term sheet; shorten the pricing or selling period")
+        raise ValueError(
+            f"Only {n_days} trading days of bars. This term sheet needs at least {first_day + H}: "
+            f"{first_day} days of history before the first notice plus {H} to price and sell. "
+            "Use 5- or 15-minute bars (Yahoo 1-minute bars cover about 7 days), a longer Bloomberg "
+            "export, or fewer pricing or selling days.")
     prof, sig, last, adv5 = _prior_stats(bars, starts)
 
     # ---- size the trade from what is known on the notice morning

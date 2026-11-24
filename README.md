@@ -289,5 +289,5 @@ views/             dashboard pages (deal economics, trade-out vs VWAP)
 app.py             dashboard entry point
 run.py             CLI: prints tables, writes charts to output/
 trade.py           CLI: ticker in, frictionless vs execution-aware, best setup, historical replay
-tests/             42 tests: contract terms, engine, metrics, no lookahead
+tests/             46 tests: contract terms, engine, metrics, no lookahead
 ```

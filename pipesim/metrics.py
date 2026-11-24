@@ -3,27 +3,40 @@ import numpy as np
 from .instruments import TRADING_DAYS
 
 
-def irr(cashflows: np.ndarray, lo: float = -0.99, hi: float = 20.0, iters: int = 80) -> np.ndarray:
+def irr(cashflows: np.ndarray, lo: float = -0.99, hi: float = 1e6, iters: int = 100) -> np.ndarray:
     """Annualized IRR per path by vectorized bisection on daily cashflows, shape (n_paths,).
 
-    Paths with no sign change in NPV over [lo, hi] (for example a SEPA that never drew)
+    The search runs on log(1 + r), so one pass covers -99% up to very large rates. Annualizing a
+    return earned in a few weeks gives rates in the thousands of percent, and those paths must stay
+    in the percentiles: dropping them biases every IRR quantile down.
+
+    A funded deal (cash paid out on day 0) whose IRR lies outside [lo, hi] is clamped to the
+    nearer end, so a total loss counts as -99% rather than disappearing. Paths with nothing paid
+    out up front and no sign change (for example an equity line, which ties up no capital)
     return nan.
     """
     t = np.arange(cashflows.shape[1]) / TRADING_DAYS
 
-    def npv(r):
-        return (cashflows * (1.0 + r[:, None]) ** (-t)).sum(axis=1)
+    def npv(x):                                  # x = log(1 + r)
+        return (cashflows * np.exp(-x[:, None] * t)).sum(axis=1)
 
-    lo_v = np.full(cashflows.shape[0], lo)
-    hi_v = np.full(cashflows.shape[0], hi)
-    has_root = np.sign(npv(lo_v)) != np.sign(npv(hi_v))
+    n = cashflows.shape[0]
+    lo_v = np.full(n, np.log1p(lo))
+    hi_v = np.full(n, np.log1p(hi))
+    f_lo, f_hi = npv(lo_v), npv(hi_v)
+    has_root = np.sign(f_lo) != np.sign(f_hi)
+    s_lo = np.sign(f_lo)
     for _ in range(iters):
         mid = 0.5 * (lo_v + hi_v)
-        go_left = np.sign(npv(mid)) == np.sign(npv(lo_v))
+        go_left = np.sign(npv(mid)) == s_lo
         lo_v = np.where(go_left, mid, lo_v)
         hi_v = np.where(go_left, hi_v, mid)
-    out = 0.5 * (lo_v + hi_v)
-    return np.where(has_root, out, np.nan)
+    out = np.expm1(0.5 * (lo_v + hi_v))
+    funded = cashflows[:, 0] < 0
+    out = np.where(has_root, out, np.nan)
+    out = np.where(~has_root & funded & (f_lo <= 0), lo, out)    # loses money even at -99%
+    out = np.where(~has_root & funded & (f_hi > 0), hi, out)     # still profitable at the top rate
+    return out
 
 
 def summarize(res) -> dict:

@@ -30,6 +30,23 @@ def test_calibration_matches_daily_square_root_law():
     assert abs((1 - r.px[0, -2]) / target - 1) < 0.05
 
 
+def test_short_data_still_runs():
+    # Yahoo 1-minute bars cover about 7 days; the warm-up shrinks instead of leaving no notice days
+    b = synthetic(days=7)
+    r = run_tradeout(b, TermSheet(option=1, sell_days=1), IntradayImpact(), "vwap", shares_out=1e9)
+    assert len(r.windows) >= 1
+
+
+def test_too_little_data_says_why():
+    b = synthetic(days=5)
+    try:
+        run_tradeout(b, TermSheet(option=2, pricing_days=3), IntradayImpact(), "vwap", shares_out=1e9)
+    except ValueError as e:
+        assert "trading days of bars" in str(e)
+    else:
+        raise AssertionError("expected a ValueError")
+
+
 def test_no_impact_no_spread_fills_at_bar_price():
     b = synthetic()
     r = run_tradeout(b, TermSheet(), IntradayImpact(eta=0.0, half_spread=0.0), "vwap", shares_out=1e9)

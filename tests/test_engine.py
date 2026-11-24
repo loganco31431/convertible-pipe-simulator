@@ -20,6 +20,27 @@ def test_irr_recovers_known_rate():
     assert abs(irr(cf)[0] - 0.10) < 1e-6
 
 
+def test_irr_keeps_very_high_and_total_loss_paths():
+    # +10% in one week annualizes to about 14,000%: it must be solved, not dropped as nan.
+    # A path that never gets any money back counts as -99%, not nan.
+    cf = np.zeros((3, 253))
+    cf[:, 0] = -100
+    cf[0, 5] = 110
+    cf[2, 252] = 110
+    r = irr(cf)
+    assert np.isfinite(r).all()
+    assert abs(r[0] - (1.1 ** (252 / 5) - 1)) / r[0] < 1e-6
+    assert r[1] == -0.99
+    assert abs(r[2] - 0.10) < 1e-6
+
+
+def test_irr_unfunded_flows_stay_nan():
+    # nothing paid out on day 0 and no sign change: no meaningful IRR (an equity line)
+    cf = np.zeros((1, 50))
+    cf[0, 10] = 5.0
+    assert np.isnan(irr(cf)[0])
+
+
 def test_zero_vol_note_irr_is_discount_driven():
     # With sigma=0 the stock is flat, so every conversion captures exactly the discount
     # (net of slippage) and the OID, and the whole note converts.
